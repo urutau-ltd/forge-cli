@@ -1,37 +1,9 @@
 const std = @import("std");
+const lib = @import("lib");
+
 const Io = std.Io;
 const StringHashMap = std.StringHashMap;
 const Allocator = std.mem.Allocator;
-
-const KeyEntry = struct {
-    type: []const u8, //
-    name: []const u8,
-    token: []const u8,
-};
-
-pub const KeysFile = struct {
-    hosts: StringHashMap(KeyEntry), //
-    aliases: StringHashMap([]const u8),
-
-    // Initializer
-    pub fn init(allocator: Allocator) KeysFile {
-        return .{
-            .hosts = StringHashMap(KeyEntry).init(allocator), //
-            .aliases = StringHashMap([]const u8).init(allocator),
-        };
-    }
-
-    // Free
-    pub fn deinit(self: *KeysFile) void {
-        self.hosts.deinit();
-        self.aliases.deinit();
-    }
-};
-
-pub const Context = struct {
-    base: []const u8,
-    token: []const u8,
-};
 
 pub fn main(init: std.process.Init) !void {
     const arena: Allocator = init.arena.allocator();
