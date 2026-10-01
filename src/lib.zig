@@ -58,6 +58,44 @@ pub const Context = struct {
     }
 };
 
+/// Represents a parsed collection of CLI arguments for post-processing
+pub const Options = struct {
+    config: ?[]const u8 = null,
+    host: ?[]const u8 = null,
+};
+
+/// Receives the process CLI arguments passed by the shell and serializes them
+/// into the Options structure.
+pub fn parseFlags(args: []const []const u8) !Options {
+    var opts = Options{};
+    var i: usize = 0;
+
+    while (i < args.len) : (i += 1) {
+        const arg: []const u8 = args[i];
+
+        if (std.mem.eql(u8, arg, "--config") //
+        or std.mem.eql(u8, arg, "-c")) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.config = args[i];
+        } else if (std.mem.eql(
+            u8,
+            arg,
+            "--host",
+        ) or std.mem.eql(
+            u8,
+            arg,
+            "-h",
+        )) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.host = args[i];
+        }
+    }
+
+    return opts;
+}
+
 /// Returns a deserialized JSON keys file into a KeysFile structure, every
 /// time you use this function you should deinit the result of this function
 /// using your allocator.
@@ -147,6 +185,10 @@ pub fn defaultConfigPath(allocator: Allocator, home: []const u8) ![]const u8 {
     );
 }
 
+/// Returns the token and trimmed default base from the provided keys file
+/// at config_path. Will fail if the requested host key is not found on the
+/// file. Caller must ensure they free both base and token after using their
+/// values.
 pub fn resolveContext(
     io: Io,
     allocator: Allocator,
@@ -181,6 +223,21 @@ pub fn resolveContext(
         .base = base_dupe,
         .token = token_dupe,
     };
+}
+
+test "parseFlags should handle valid CLI options properly" {
+    const args = [_][]const u8{
+        "--config", "settings.json", "-h", "foo",
+    };
+    const opts = try parseFlags(&args);
+
+    try std.testing.expectEqualStrings("settings.json", opts.config.?);
+    try std.testing.expectEqualStrings("foo", opts.host.?);
+}
+
+test "parseFlags should error out when a flag has no provided value" {
+    const args = [_][]const u8{"--config"};
+    try std.testing.expectError(error.MissingValue, parseFlags(&args));
 }
 
 test "resolveContext should fallback to the default base and trim the trailing slash" {
