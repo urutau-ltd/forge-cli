@@ -124,6 +124,29 @@ pub fn readKeys(io: Io, allocator: Allocator, path: []const u8) !KeysFile {
     return keys_file;
 }
 
+/// Returns the default configuration path of the forgejo-cli, also used on the
+/// forge-cli, it needs an allocator to construct the full file path, make sure
+/// to free it after using it.
+pub fn defaultConfigPath(allocator: Allocator, home: []const u8) ![]const u8 {
+    return try std.fs.path.join(
+        allocator,
+        &[_][]const u8{ home, ".local", "share", "forgejo-cli", "keys.json" },
+    );
+}
+
+test "defaultConfigPath should return the default forgejo-cli configuration" {
+    const allocator: Allocator = std.testing.allocator;
+
+    const fake_home: []const u8 = "/home/zig";
+    const config_path: []const u8 = try defaultConfigPath(allocator, fake_home);
+    defer allocator.free(config_path);
+
+    try std.testing.expectEqualStrings(
+        "/home/zig/.local/share/forgejo-cli/keys.json",
+        config_path,
+    );
+}
+
 test "readKeys should load keys from a valid JSON file" {
     const allocator: Allocator = std.testing.allocator;
     const io: Io = std.testing.io;
