@@ -5,6 +5,9 @@ const Io = std.Io;
 const StringHashMap = std.StringHashMap;
 const Allocator = std.mem.Allocator;
 
+const DEFAULT_HOST = "sl.urutau-ltd.org:23231";
+const DEFAULT_BASE = "https://sl.urutau-ltd.org";
+
 pub fn main(init: std.process.Init) !void {
     const arena: Allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);

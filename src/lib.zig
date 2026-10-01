@@ -51,8 +51,21 @@ pub const KeysFile = struct {
 pub const Context = struct {
     base: []const u8,
     token: []const u8,
+
+    pub fn deinit(self: Context, allocator: Allocator) void {
+        allocator.free(self.base);
+        allocator.free(self.token);
+    }
 };
 
+/// Returns a deserialized JSON keys file into a KeysFile structure, every
+/// time you use this function you should deinit the result of this function
+/// using your allocator.
+///
+///
+/// Also, mind that this function reads files no bigger than 10MB.
+/// It returns either error.FileNotFound, json.SyntaxError, etc if the keys file
+/// doesn't exist or if it contains a malformed JSON.
 pub fn readKeys(io: Io, allocator: Allocator, path: []const u8) !KeysFile {
     const file = Io.Dir.cwd().openFile(io, path, .{}) catch |err| {
         std.debug.print("unable to read forgejo-cli keys at {s}: {s}\n", //
@@ -124,9 +137,9 @@ pub fn readKeys(io: Io, allocator: Allocator, path: []const u8) !KeysFile {
     return keys_file;
 }
 
-/// Returns the default configuration path of the forgejo-cli, also used on the
-/// forge-cli, it needs an allocator to construct the full file path, make sure
-/// to free it after using it.
+/// Returns the default configuration path of the forgejo-cli given a resolved
+/// HOME environment variable, it needs an allocator to construct the full
+/// file path, the caller must free the returned slice with allocator.free.
 pub fn defaultConfigPath(allocator: Allocator, home: []const u8) ![]const u8 {
     return try std.fs.path.join(
         allocator,
@@ -134,11 +147,111 @@ pub fn defaultConfigPath(allocator: Allocator, home: []const u8) ![]const u8 {
     );
 }
 
+pub fn resolveContext(
+    io: Io,
+    allocator: Allocator,
+    config_path: []const u8,
+    host: []const u8,
+    default_base: []const u8,
+) !Context {
+    var keys = try readKeys(io, allocator, config_path);
+    defer keys.deinit(allocator);
+
+    const entry = keys.hosts.get(host) orelse {
+        std.debug.print(
+            "no token found for host {s} in {s}",
+            .{
+                host,
+                config_path,
+            },
+        );
+
+        return error.NoTokenFound;
+    };
+
+    const raw_base = if (keys.aliases.get(host)) |alias| alias else default_base;
+    const trimmed_base = std.mem.trimEnd(u8, raw_base, "/");
+
+    const base_dupe = try allocator.dupe(u8, trimmed_base);
+    errdefer allocator.free(base_dupe);
+
+    const token_dupe = try allocator.dupe(u8, entry.token);
+
+    return Context{
+        .base = base_dupe,
+        .token = token_dupe,
+    };
+}
+
+test "resolveContext should fallback to the default base and trim the trailing slash" {
+    const allocator: Allocator = std.testing.allocator;
+    const io: Io = std.testing.io;
+
+    const DEFAULT_BASE = "https://sl.urutau-ltd.org/";
+    const DEFAULT_HOST = "sl.urutau-ltd.org";
+
+    var tmp: std.testing.TmpDir = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Apparently this is the way of mocking JSON
+    const payload =
+        \\{
+        \\  "hosts": {
+        \\    "sl.urutau-ltd.org" : {
+        \\      "type": "Application",
+        \\      "name": "testingkey",
+        \\      "token": "0000000000000000000000000000000000000000"
+        \\    }
+        \\  },
+        \\  "aliases": { "sl": "sl.urutau-ltd.org" },
+        \\  "default_ssh": []
+        \\}
+    ;
+
+    // write the mocked JSON into the temporal directory we did earlier
+    try tmp.dir.writeFile(
+        std.testing.io,
+        .{ .sub_path = "test_keys.json", .data = payload },
+    );
+
+    var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path_len = try tmp.dir.realPathFile(
+        std.testing.io,
+        "test_keys.json",
+        &path_buffer,
+    );
+    const abs_path = path_buffer[0..abs_path_len];
+
+    const context = try resolveContext(
+        io,
+        allocator,
+        abs_path,
+        DEFAULT_HOST,
+        DEFAULT_BASE,
+    );
+
+    defer allocator.free(context.base);
+    defer allocator.free(context.token);
+
+    try std.testing.expectEqualStrings(
+        "https://sl.urutau-ltd.org",
+        context.base,
+    );
+
+    try std.testing.expectEqualStrings(
+        "0000000000000000000000000000000000000000",
+        context.token,
+    );
+}
+
 test "defaultConfigPath should return the default forgejo-cli configuration" {
     const allocator: Allocator = std.testing.allocator;
 
     const fake_home: []const u8 = "/home/zig";
-    const config_path: []const u8 = try defaultConfigPath(allocator, fake_home);
+    const config_path: []const u8 = try defaultConfigPath(
+        allocator,
+        fake_home,
+    );
     defer allocator.free(config_path);
 
     try std.testing.expectEqualStrings(
