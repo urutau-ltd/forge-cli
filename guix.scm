@@ -1,7 +1,7 @@
-;;; maak.scm --- Quixotic build automation, ported from Make to maak
+;;; guix.scm --- Guix package definition for forge-cli
 ;;; -*- mode: scheme; -*-
 ;;; SPDX-License-Identifier: GPL-3.0-or-later
-;;; Copyright © 2024-2026 Urutau-Ltd <softwarelibre@urutau-ltd.org>
+;;; Copyright © 2026 Urutau-Ltd <softwarelibre@urutau-ltd.org>
 ;;;
 ;;;   , _ ,      _    _            _                     _ _      _
 ;;;  ( o o )    | |  | |          | |                   | | |    | |
@@ -21,18 +21,27 @@
 ;;; See the GNU General Public License for more details.
 ;;;
 
+(use-modules (guix)
+             (guix build-system zig)
+             (guix git-download)
+             (gnu packages zig)
+             ((guix licenses) #:prefix license:))
+
 (define-public forge-cli
   (package
     (name "forge-cli")
     (version "nightly")
     (source
      (local-file (dirname (current-filename))
+                 #:recursive? #t
                  #:select? (git-predicate (dirname (current-filename)))))
     (build-system zig-build-system)
-    (native-inputs (list zig-0.16))
-    (home-page "")
-    (synopsis "")
-    (description "")
-    (license license:gpl3+))
+    (arguments (list #:zig zig-0.16))
+    (home-page "https://sl.urutau-ltd.org/urutau-ltd/forge-cli")
+    (synopsis "Command-line client for the Forgejo API")
+    (description
+     "This package provides a command-line client for the Forgejo API, reading
+instance tokens and aliases from the forgejo-cli keys.json file.")
+    (license license:gpl3+)))
 
- forge-cli
+forge-cli
