@@ -16,10 +16,17 @@ const KeyEntry = struct {
 
 /// Represents the entire keys.json file
 pub const KeysFile = struct {
-    hosts: StringHashMap(KeyEntry), //
+    /// Represents the Child JSON in the keys.json file. Where we have the
+    /// "hosts" : { ... } form to be used.
+    hosts: StringHashMap(KeyEntry),
+    /// Represents a given shorthand alias for a host, also a JSON with
+    /// a map for name -> host inside in the keys.json file.
     aliases: StringHashMap([]const u8),
 
-    // Initializer
+    /// Initializes both Hash maps when instantiating this struct. Make sure
+    /// to use an allocator for initialization whether it's an arena or
+    /// general purpose allocator, or the testing allocator to detect memory
+    /// errors.
     pub fn init(allocator: Allocator) KeysFile {
         return .{
             .hosts = StringHashMap(KeyEntry).init(allocator),
@@ -27,7 +34,9 @@ pub const KeysFile = struct {
         };
     }
 
-    // Free
+    /// Deinitializing the KeysFile will clean up all JSON record values inside
+    /// it. Make sure to use the same allocator, you can call it with defer
+    /// as it doesn't return an error.
     pub fn deinit(self: *KeysFile, allocator: Allocator) void {
         var host_it = self.hosts.iterator();
         while (host_it.next()) |kv| {
@@ -48,10 +57,18 @@ pub const KeysFile = struct {
     }
 };
 
+/// Represents the request context needed to make a successful query to the
+/// forgejo API.
 pub const Context = struct {
+    /// Represents the base URL that the query will use to send it's requests.
     base: []const u8,
+    /// Represents the secret token created by the forgejo instance, this one
+    /// is particularly used inside the Authorization header, do not call this
+    /// for anything outside this purpose!
     token: []const u8,
 
+    /// When deinitializing this, make sure to pass your allocator to
+    /// free both base and token copies.
     pub fn deinit(self: Context, allocator: Allocator) void {
         allocator.free(self.base);
         allocator.free(self.token);
@@ -60,12 +77,111 @@ pub const Context = struct {
 
 /// Represents a parsed collection of CLI arguments for post-processing
 pub const Options = struct {
+    /// Optional field for the path of the configuration file in case it's not
+    /// present in the default intended path.
     config: ?[]const u8 = null,
+
+    /// The keys.json file host without schema. Used for resolveContext.
     host: ?[]const u8 = null,
+
+    /// Represents the positional arguments for the CLI. We do not need more
+    /// than 16 in the entire program's lifecycle AFAIK.
+    positionals: [16][]const u8 = undefined,
+
+    /// Counter for positional arguments, used for safety/correct operations
+    positional_count: usize = 0,
 };
+
+/// Options for the api function exported in this module.
+pub const ApiOptions = struct {
+    /// Method used to send the fetch request
+    method: std.http.Method = .GET,
+    /// Request body
+    body: ?[]const u8 = null,
+    /// Headers sent by the fetch method.
+    ///
+    /// NOTE: At the current implementation, the "Content-Type": "Application"
+    /// header is ALWAYS sent, ignoring if the request has a body or not. This
+    /// is a detail that will get ironed out in later code refactors when this
+    /// project reaches an MPV state.
+    headers: []const std.http.Header = &.{},
+};
+
+/// Calls a Forgejo API endpoint. It needs an allocator for both request and
+/// response purposes, the returned slice is owned by the caller and gets freed
+/// with allocator.free. If it fails, HttpRedirection, HttpClientError,
+/// HttpServerError and HttpRequestFailed errors are raised alongside
+/// network IO errors that may arise.
+///
+/// NOTE: On an empty body, this function will still send a request with the
+/// application/json content type. See ApiOptions documentation for more
+/// information about this.
+///
+/// NOTE: There's a special case, if the response comes with a response code of
+/// 204 (No Content) the switch inside the function will make the function
+/// return an empty slice to mimic the original TypeScript program behaviour.
+///
+/// TODO: This function doesn't have any tests, I'm not
+/// sick on the head enough to mock an entire HTTP request loop in zig.
+pub fn api(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    path: []const u8,
+    options: ApiOptions,
+) ![]const u8 {
+    const url_str = try std.fmt.allocPrint(
+        allocator,
+        "{s}/api/v1{s}",
+        .{
+            ctx.base,
+            path,
+        },
+    );
+    defer allocator.free(url_str);
+
+    const auth_val = try std.fmt.allocPrint(
+        allocator,
+        "token {s}",
+        .{ctx.token},
+    );
+    defer allocator.free(auth_val);
+
+    var response_writer = std.Io.Writer.Allocating.init(
+        allocator,
+    );
+    errdefer response_writer.deinit();
+
+    const req = try client.fetch(.{
+        .location = .{ .url = url_str },
+        .method = options.method,
+        .extra_headers = &.{
+            .{ .name = "Authorization", .value = auth_val },
+            .{ .name = "Content-Type", .value = "application/json" },
+        },
+        .payload = options.body,
+        .response_writer = &response_writer.writer,
+    });
+
+    const status_code = @intFromEnum(req.status);
+    switch (status_code) {
+        200...299 => {},
+        300...399 => return error.HttpRedirection,
+        400...499 => return error.HttpClientError,
+        500...599 => return error.HttpServerError,
+        else => return error.HttpRequestFailed,
+    }
+
+    return response_writer.writer.buffer[0..response_writer.writer.end];
+}
 
 /// Receives the process CLI arguments passed by the shell and serializes them
 /// into the Options structure.
+///
+/// Note: Positional args are stored using a fixed inline buffer inside the
+/// Options struct. This avoids the need for dynamic memory allocation and
+/// a corresponding deinit lifecycle, For standard CLI usage, an arbitrary
+/// limit like 16 simplifies memory management significantly...for me at least.
 pub fn parseFlags(args: []const []const u8) !Options {
     var opts = Options{};
     var i: usize = 0;
@@ -90,6 +206,15 @@ pub fn parseFlags(args: []const []const u8) !Options {
             if (i + 1 >= args.len) return error.MissingValue;
             i += 1;
             opts.host = args[i];
+        } else {
+            // Unrecognized flags or regular values are treated as positional
+            // arguments
+            if (opts.positional_count >= opts.positionals.len) {
+                return error.TooManyPositionalArguments;
+            }
+
+            opts.positionals[opts.positional_count] = arg;
+            opts.positional_count += 1;
         }
     }
 
@@ -99,7 +224,6 @@ pub fn parseFlags(args: []const []const u8) !Options {
 /// Returns a deserialized JSON keys file into a KeysFile structure, every
 /// time you use this function you should deinit the result of this function
 /// using your allocator.
-///
 ///
 /// Also, mind that this function reads files no bigger than 10MB.
 /// It returns either error.FileNotFound, json.SyntaxError, etc if the keys file
@@ -112,7 +236,7 @@ pub fn readKeys(io: Io, allocator: Allocator, path: []const u8) !KeysFile {
     };
     defer file.close(io);
 
-    // Limit buffer to 4KB
+    // Limit read buffer to 4KB
     var read_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &read_buffer);
 
@@ -181,7 +305,13 @@ pub fn readKeys(io: Io, allocator: Allocator, path: []const u8) !KeysFile {
 pub fn defaultConfigPath(allocator: Allocator, home: []const u8) ![]const u8 {
     return try std.fs.path.join(
         allocator,
-        &[_][]const u8{ home, ".local", "share", "forgejo-cli", "keys.json" },
+        &[_][]const u8{
+            home,
+            ".local",
+            "share",
+            "forgejo-cli",
+            "keys.json",
+        },
     );
 }
 
@@ -225,19 +355,54 @@ pub fn resolveContext(
     };
 }
 
-test "parseFlags should handle valid CLI options properly" {
+test "parseFlags should handle valid CLI options and positionals properly" {
     const args = [_][]const u8{
-        "--config", "settings.json", "-h", "foo",
+        "--config",
+        "settings.json",
+        "-h",
+        "foo",
+        "repo-view",
     };
     const opts = try parseFlags(&args);
 
+    // Assert flags
     try std.testing.expectEqualStrings("settings.json", opts.config.?);
     try std.testing.expectEqualStrings("foo", opts.host.?);
+
+    // Assert positional args
+    try std.testing.expectEqual(@as(usize, 1), opts.positional_count);
+    try std.testing.expectEqualStrings("repo-view", opts.positionals[0]);
 }
 
 test "parseFlags should error out when a flag has no provided value" {
     const args = [_][]const u8{"--config"};
     try std.testing.expectError(error.MissingValue, parseFlags(&args));
+}
+
+test "parseFlags should error out when the positional arguments limit is exceeded" {
+    const args = [_][]const u8{
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+    };
+    try std.testing.expectError(
+        error.TooManyPositionalArguments,
+        parseFlags(&args),
+    );
 }
 
 test "resolveContext should fallback to the default base and trim the trailing slash" {
