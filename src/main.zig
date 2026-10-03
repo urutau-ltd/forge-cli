@@ -108,6 +108,34 @@ pub fn main(init: std.process.Init) !void {
             "{s}\n",
             .{query},
         );
+    } else if (std.mem.eql(u8, action, "comment-list")) {
+        const number = try std.fmt.parseInt(
+            u32,
+            opts.positionals[2],
+            10,
+        );
+
+        var limit: u32 = undefined;
+
+        if (opts.positional_count > 4) {
+            limit = try std.fmt.parseInt(
+                u32,
+                opts.positionals[3],
+                10,
+            );
+        } else {
+            limit = 100;
+        }
+
+        const query = try lib.commentList(
+            arena,
+            &client,
+            ctx,
+            repo,
+            number,
+            limit,
+        );
+        try stdout.print("{s}\n", .{query});
     } else {
         std.log.err("Error: unknown action '{s}'\n", .{action});
         return error.UnknownAction;

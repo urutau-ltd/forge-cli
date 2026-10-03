@@ -403,6 +403,34 @@ pub fn resolveContext(
     };
 }
 
+// ===> API ENDPOINT ABSTRACTIONS
+
+/// Lists the comments of a given Forgejo issue. Returns a JSON value owned by
+/// the caller.
+pub fn commentList(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    number: u32,
+    limit: u32,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/issues/{d}/comments?limit={}",
+        .{
+            repo,
+            number,
+            limit,
+        },
+    );
+
+    defer allocator.free(path);
+    return api(allocator, client, ctx, path, .{});
+}
+
+// ===> TESTS START HERE
+
 test "parseFlags should handle valid CLI options and positionals properly" {
     const args = [_][]const u8{
         "--config",
