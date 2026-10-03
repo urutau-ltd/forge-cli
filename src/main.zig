@@ -52,13 +52,11 @@ pub fn main(init: std.process.Init) !void {
     const stdout = &stdout_file_writer.interface;
 
     if (std.mem.eql(u8, action, "repo-view")) {
-        const path = try std.fmt.allocPrint(arena, "/repos/{s}", .{repo});
-        const query = try lib.api(
+        const query = try lib.repoView(
             arena,
             &client,
             ctx,
-            path,
-            .{},
+            repo,
         );
 
         try stdout.print(
@@ -117,7 +115,7 @@ pub fn main(init: std.process.Init) !void {
 
         var limit: u32 = undefined;
 
-        if (opts.positional_count > 4) {
+        if (opts.positional_count >= 4) {
             limit = try std.fmt.parseInt(
                 u32,
                 opts.positionals[3],

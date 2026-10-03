@@ -417,12 +417,30 @@ pub fn commentList(
 ) ![]const u8 {
     const path = try std.fmt.allocPrint(
         allocator,
-        "/repos/{s}/issues/{d}/comments?limit={}",
+        "/repos/{s}/issues/{d}/comments?limit={d}",
         .{
             repo,
             number,
             limit,
         },
+    );
+
+    defer allocator.free(path);
+    return api(allocator, client, ctx, path, .{});
+}
+
+/// Returns a JSON containing details about a given Forgejo repository. The
+/// returned JSON is owned by the caller.
+pub fn repoView(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}",
+        .{repo},
     );
 
     defer allocator.free(path);
