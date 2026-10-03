@@ -99,11 +99,6 @@ pub const ApiOptions = struct {
     /// Request body
     body: ?[]const u8 = null,
     /// Headers sent by the fetch method.
-    ///
-    /// NOTE: At the current implementation, the "Content-Type": "Application"
-    /// header is ALWAYS sent, ignoring if the request has a body or not. This
-    /// is a detail that will get ironed out in later code refactors when this
-    /// project reaches an MPV state.
     headers: []const std.http.Header = &.{},
 };
 
@@ -112,10 +107,6 @@ pub const ApiOptions = struct {
 /// with allocator.free. If it fails, HttpRedirection, HttpClientError,
 /// HttpServerError and HttpRequestFailed errors are raised alongside
 /// network IO errors that may arise.
-///
-/// NOTE: On an empty body, this function will still send a request with the
-/// application/json content type. See ApiOptions documentation for more
-/// information about this.
 ///
 /// NOTE: There's a special case, if the response comes with a response code of
 /// 204 (No Content) the switch inside the function will make the function
@@ -152,13 +143,27 @@ pub fn api(
     );
     errdefer response_writer.deinit();
 
+    var extra_headers: [2]std.http.Header = undefined;
+    var count: usize = 0;
+
+    extra_headers[count] = .{
+        .name = "Authorization",
+        .value = auth_val,
+    };
+    count += 1;
+
+    if (options.body != null) {
+        extra_headers[count] = .{
+            .name = "Content-Type",
+            .value = "application/json",
+        };
+        count += 1;
+    }
+
     const req = try client.fetch(.{
         .location = .{ .url = url_str },
         .method = options.method,
-        .extra_headers = &.{
-            .{ .name = "Authorization", .value = auth_val },
-            .{ .name = "Content-Type", .value = "application/json" },
-        },
+        .extra_headers = extra_headers[0..count],
         .payload = options.body,
         .response_writer = &response_writer.writer,
     });
@@ -172,7 +177,7 @@ pub fn api(
         else => return error.HttpRequestFailed,
     }
 
-    return response_writer.writer.buffer[0..response_writer.writer.end];
+    return response_writer.toOwnedSlice();
 }
 
 /// Receives the process CLI arguments passed by the shell and serializes them
