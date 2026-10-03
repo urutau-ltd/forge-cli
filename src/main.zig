@@ -70,12 +70,6 @@ pub fn main(init: std.process.Init) !void {
             10,
         );
 
-        const path = try std.fmt.allocPrint(
-            arena,
-            "/repos/{s}/issues/{d}/comments",
-            .{ repo, number },
-        );
-
         const body = opts.body orelse "";
         if (std.mem.eql(u8, body, "")) {
             std.log.err(
@@ -85,21 +79,13 @@ pub fn main(init: std.process.Init) !void {
             return error.IssueCommentMissingBody;
         }
 
-        const json_body = try std.json.Stringify.valueAlloc(
-            arena,
-            .{ .body = body },
-            .{},
-        );
-
-        const query = try lib.api(
+        const query = try lib.commentCreate(
             arena,
             &client,
             ctx,
-            path,
-            .{
-                .method = .POST,
-                .body = json_body,
-            },
+            repo,
+            number,
+            body,
         );
 
         try stdout.print(

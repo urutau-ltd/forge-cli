@@ -429,6 +429,37 @@ pub fn commentList(
     return api(allocator, client, ctx, path, .{});
 }
 
+/// Creates a comment inside a given Forgejo issue. The returned JSON is the
+/// created comment and it's owned by the caller.
+pub fn commentCreate(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    issue_number: u32,
+    comment: []const u8,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/issues/{d}/comments",
+        .{ repo, issue_number },
+    );
+
+    const body = try std.json.Stringify.valueAlloc(
+        allocator,
+        .{ .body = comment },
+        .{},
+    );
+
+    defer allocator.free(path);
+    defer allocator.free(body);
+
+    return api(allocator, client, ctx, path, .{
+        .method = .POST,
+        .body = body,
+    });
+}
+
 /// Returns a JSON containing details about a given Forgejo repository. The
 /// returned JSON is owned by the caller.
 pub fn repoView(
