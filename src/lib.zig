@@ -84,6 +84,10 @@ pub const Options = struct {
     /// The keys.json file host without schema. Used for resolveContext.
     host: ?[]const u8 = null,
 
+    /// The JSON payload required by several forgejo endpoint operations and
+    /// the CLI's --body flag.
+    body: ?[]const u8 = null,
+
     /// Represents the positional arguments for the CLI. We do not need more
     /// than 16 in the entire program's lifecycle AFAIK.
     positionals: [16][]const u8 = undefined,
@@ -226,8 +230,11 @@ pub fn parseFlags(args: []const []const u8) !Options {
     while (i < args.len) : (i += 1) {
         const arg: []const u8 = args[i];
 
-        if (std.mem.eql(u8, arg, "--config") //
-        or std.mem.eql(u8, arg, "-c")) {
+        if (std.mem.eql(
+            u8,
+            arg,
+            "--config",
+        ) or std.mem.eql(u8, arg, "-c")) {
             if (i + 1 >= args.len) return error.MissingValue;
             i += 1;
             opts.config = args[i];
@@ -235,14 +242,18 @@ pub fn parseFlags(args: []const []const u8) !Options {
             u8,
             arg,
             "--host",
-        ) or std.mem.eql(
-            u8,
-            arg,
-            "-h",
-        )) {
+        ) or std.mem.eql(u8, arg, "-h")) {
             if (i + 1 >= args.len) return error.MissingValue;
             i += 1;
             opts.host = args[i];
+        } else if (std.mem.eql(u8, arg, "--body") or std.mem.eql(
+            u8,
+            arg,
+            "-b",
+        )) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.body = args[i];
         } else {
             // Unrecognized flags or regular values are treated as positional
             // arguments
