@@ -106,7 +106,8 @@ pub const ApiOptions = struct {
 /// response purposes, the returned slice is owned by the caller and gets freed
 /// with allocator.free. If it fails, HttpRedirection, HttpClientError,
 /// HttpServerError and HttpRequestFailed errors are raised alongside
-/// network IO errors that may arise.
+/// network IO errors that may arise. On HTTP errors, the status code, URL and
+/// response body are printed to stderr before the error is returned.
 ///
 /// NOTE: There's a special case, if the response comes with a response code of
 /// 204 (No Content) the switch inside the function will make the function
@@ -169,15 +170,46 @@ pub fn api(
     });
 
     const status_code = @intFromEnum(req.status);
+    const body = try response_writer.toOwnedSlice();
+    errdefer allocator.free(body);
+
     switch (status_code) {
         200...299 => {},
-        300...399 => return error.HttpRedirection,
-        400...499 => return error.HttpClientError,
-        500...599 => return error.HttpServerError,
-        else => return error.HttpRequestFailed,
+        300...399 => {
+            std.debug.print("HTTP {d} for {s}: {s}\n", .{
+                status_code,
+                url_str,
+                body,
+            });
+            return error.HttpRedirection;
+        },
+        400...499 => {
+            std.debug.print("HTTP {d} for {s}: {s}\n", .{
+                status_code,
+                url_str,
+                body,
+            });
+            return error.HttpClientError;
+        },
+        500...599 => {
+            std.debug.print("HTTP {d} for {s}: {s}\n", .{
+                status_code,
+                url_str,
+                body,
+            });
+            return error.HttpServerError;
+        },
+        else => {
+            std.debug.print("HTTP {d} for {s}: {s}\n", .{
+                status_code,
+                url_str,
+                body,
+            });
+            return error.HttpRequestFailed;
+        },
     }
 
-    return response_writer.toOwnedSlice();
+    return body;
 }
 
 /// Receives the process CLI arguments passed by the shell and serializes them
