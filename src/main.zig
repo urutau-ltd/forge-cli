@@ -170,14 +170,63 @@ pub fn main(init: std.process.Init) !void {
             .{ comment_id, repo },
         );
     } else if (std.mem.eql(u8, action, "label-list")) {
-        // TODO -> GET /repos/{repo}/labels?limit=100
-        try stdout.print("todo\n", .{});
+        var limit: u32 = undefined;
+
+        if (opts.positional_count >= 3) {
+            limit = try std.fmt.parseInt(
+                u32,
+                opts.positionals[2],
+                10,
+            );
+        } else {
+            limit = 100;
+        }
+
+        const query = try lib.labelList(
+            arena,
+            &client,
+            ctx,
+            repo,
+            limit,
+        );
+        try stdout.print("{s}\n", .{query});
     } else if (std.mem.eql(u8, action, "milestone-list")) {
-        // TODO -> GET /repos/{repo}/milestones?state=all&limit=100
-        try stdout.print("todo\n", .{});
+        var limit: u32 = undefined;
+
+        if (opts.positional_count >= 3) {
+            limit = try std.fmt.parseInt(
+                u32,
+                opts.positionals[2],
+                10,
+            );
+        } else {
+            limit = 100;
+        }
+
+        const query = try lib.milestoneList(
+            arena,
+            &client,
+            ctx,
+            repo,
+            limit,
+        );
+
+        try stdout.print("{s}\n", .{query});
     } else if (std.mem.eql(u8, action, "pr-view")) {
-        // TODO -> GET /repos/{repo}/pulls/{number}
-        try stdout.print("todo\n", .{});
+        const number = try std.fmt.parseInt(
+            u32,
+            opts.positionals[2],
+            10,
+        );
+
+        const query = try lib.prList(
+            arena,
+            &client,
+            ctx,
+            repo,
+            number,
+        );
+        try stdout.print("{s}\n", .{query});
     } else if (std.mem.eql(u8, action, "issue-search")) {
         // TODO -> GET /repos/{repo}/issues + query string
         try stdout.print("todo\n", .{});

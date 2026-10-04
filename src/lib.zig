@@ -533,6 +533,72 @@ pub fn repoView(
     return api(allocator, client, ctx, path, .{});
 }
 
+/// Lists the labels of a given Forgejo repository.
+/// Returns a JSON value owned by the caller.
+pub fn labelList(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    limit: u32,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/labels?limit={d}",
+        .{
+            repo,
+            limit,
+        },
+    );
+
+    defer allocator.free(path);
+    return api(allocator, client, ctx, path, .{});
+}
+
+/// Lists the milestones of a given Forgejo repository.
+/// Returns a JSON value owned by the caller.
+pub fn milestoneList(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    limit: u32,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/milestones?state=all&limit={d}",
+        .{
+            repo,
+            limit,
+        },
+    );
+
+    defer allocator.free(path);
+    return api(allocator, client, ctx, path, .{});
+}
+
+/// Lists the merge requests of a given Forgejo repository. Returns a JSON value
+/// owned by the caller.
+pub fn prList(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    number: u32,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/pulls/{d}",
+        .{
+            repo,
+            number,
+        },
+    );
+
+    defer allocator.free(path);
+    return api(allocator, client, ctx, path, .{});
+}
+
 // ===> TESTS START HERE
 
 test "parseFlags should handle valid CLI options and positionals properly" {
