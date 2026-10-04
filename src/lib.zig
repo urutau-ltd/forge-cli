@@ -88,6 +88,12 @@ pub const Options = struct {
     /// the CLI's --body flag.
     body: ?[]const u8 = null,
 
+    /// Value flag for head of pr-create
+    head: ?[]const u8 = null,
+
+    /// Value flag for base of pr-create
+    base: ?[]const u8 = null,
+
     /// Represents the positional arguments for the CLI. We do not need more
     /// than 16 in the entire program's lifecycle AFAIK.
     positionals: [16][]const u8 = undefined,
@@ -257,6 +263,14 @@ pub fn parseFlags(args: []const []const u8) !Options {
             if (i + 1 >= args.len) return error.MissingValue;
             i += 1;
             opts.body = args[i];
+        } else if (std.mem.eql(u8, arg, "--head")) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.head = args[i];
+        } else if (std.mem.eql(u8, arg, "--base")) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.base = args[i];
         } else {
             // Unrecognized flags or regular values are treated as positional
             // arguments
@@ -620,6 +634,44 @@ pub fn issueCreate(
         .{
             .title = issue_title,
             .body = issue_body,
+        },
+        .{},
+    );
+
+    defer allocator.free(path);
+    defer allocator.free(body);
+
+    return api(allocator, client, ctx, path, .{
+        .method = .POST,
+        .body = body,
+    });
+}
+
+/// Creates a merge request inside a given Forgejo repository. The returned
+/// JSON is the created merge request and it's owned by the caller.
+pub fn prCreate(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    pr_title: []const u8,
+    pr_body: []const u8,
+    pr_base: []const u8,
+    pr_head: []const u8,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/pulls",
+        .{repo},
+    );
+
+    const body = try std.json.Stringify.valueAlloc(
+        allocator,
+        .{
+            .title = pr_title,
+            .head = pr_head,
+            .base = pr_base,
+            .body = pr_body,
         },
         .{},
     );

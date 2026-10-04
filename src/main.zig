@@ -256,8 +256,46 @@ pub fn main(init: std.process.Init) !void {
             .{query},
         );
     } else if (std.mem.eql(u8, action, "pr-create")) {
-        // TODO -> POST /repos/{repo}/pulls, body {title,head,base,body}
-        try stdout.print("todo\n", .{});
+        const title = opts.positionals[2];
+        const head = opts.head orelse "";
+        const base = opts.base orelse "";
+
+        const body = opts.body orelse "";
+        if (std.mem.eql(u8, body, "")) {
+            std.log.err(
+                "Error: The body of a merge request cannot be empty!\n",
+                .{},
+            );
+            return error.IssueCommentMissingBody;
+        }
+
+        if (std.mem.eql(u8, head, "") or std.mem.eql(
+            u8,
+            base,
+            "",
+        )) {
+            std.log.err(
+                "Error: missing either head or base flags for merge request!\n",
+                .{},
+            );
+            return error.MissingPRCreateFlags;
+        }
+
+        const query = try lib.prCreate(
+            arena,
+            &client,
+            ctx,
+            repo,
+            title,
+            body,
+            base,
+            head,
+        );
+
+        try stdout.print(
+            "{s}\n",
+            .{query},
+        );
     } else if (std.mem.eql(u8, action, "issue-block")) {
         // TODO -> POST /repos/{repo}/issues/{blocker}/blocks
         try stdout.print("todo\n", .{});
