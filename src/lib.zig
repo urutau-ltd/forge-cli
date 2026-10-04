@@ -405,6 +405,39 @@ pub fn resolveContext(
 
 // ===> API ENDPOINT ABSTRACTIONS
 
+/// Updates a given Forgejo comment by ID inside a given repository path. It
+/// returns the updated comment and the result is owned by the caller.
+pub fn commentEdit(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    comment_id: u32,
+    comment: []const u8,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/issues/comments/{d}",
+        .{ repo, comment_id },
+    );
+
+    const body = try std.json.Stringify.valueAlloc(
+        allocator,
+        .{ .body = comment },
+        .{},
+    );
+
+    defer allocator.free(path);
+    defer allocator.free(body);
+
+    return api(allocator, client, ctx, path, .{
+        .method = .PATCH,
+        .body = body,
+    });
+}
+
+pub fn commentDelete() ![]const u8 {}
+
 /// Lists the comments of a given Forgejo issue. Returns a JSON value owned by
 /// the caller.
 pub fn commentList(

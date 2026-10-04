@@ -92,6 +92,36 @@ pub fn main(init: std.process.Init) !void {
             "{s}\n",
             .{query},
         );
+    } else if (std.mem.eql(u8, action, "comment-edit")) {
+        const comment_id = try std.fmt.parseInt(
+            u32,
+            opts.positionals[2],
+            10,
+        );
+
+        const body = opts.body orelse "";
+
+        if (std.mem.eql(u8, body, "")) {
+            std.log.err(
+                "Error: The body of the comment cannot be empty!\n",
+                .{},
+            );
+            return error.IssueCommentEditMissingBody;
+        }
+
+        const query = try lib.commentEdit(
+            arena,
+            &client,
+            ctx,
+            repo,
+            comment_id,
+            body,
+        );
+
+        try stdout.print(
+            "{s}\n",
+            .{query},
+        );
     } else if (std.mem.eql(u8, action, "comment-list")) {
         const number = try std.fmt.parseInt(
             u32,
