@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = true,
     });
 
     const exe = b.addExecutable(.{
@@ -17,6 +18,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .strip = true,
+            .single_threaded = true,
         }),
     });
 
