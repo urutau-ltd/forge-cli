@@ -231,8 +231,30 @@ pub fn main(init: std.process.Init) !void {
         // TODO -> GET /repos/{repo}/issues + query string
         try stdout.print("todo\n", .{});
     } else if (std.mem.eql(u8, action, "issue-create")) {
-        // TODO -> POST /repos/{repo}/issues, body {"title","body"}
-        try stdout.print("todo\n", .{});
+        const issue_title = opts.positionals[2];
+        const body = opts.body orelse "";
+
+        if (std.mem.eql(u8, issue_title, "")) {
+            std.log.err(
+                "Error: The title of an issue cannot be empty!\n",
+                .{},
+            );
+            return error.IssueMissingTitle;
+        }
+
+        const query = try lib.issueCreate(
+            arena,
+            &client,
+            ctx,
+            repo,
+            issue_title,
+            body,
+        );
+
+        try stdout.print(
+            "{s}\n",
+            .{query},
+        );
     } else if (std.mem.eql(u8, action, "pr-create")) {
         // TODO -> POST /repos/{repo}/pulls, body {title,head,base,body}
         try stdout.print("todo\n", .{});

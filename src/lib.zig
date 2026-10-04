@@ -599,6 +599,40 @@ pub fn prList(
     return api(allocator, client, ctx, path, .{});
 }
 
+/// Creates an issue inside a given Forgejo repository. The returned JSON is the
+/// created issue and it's owned by the caller.
+pub fn issueCreate(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    issue_title: []const u8,
+    issue_body: []const u8,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/issues",
+        .{repo},
+    );
+
+    const body = try std.json.Stringify.valueAlloc(
+        allocator,
+        .{
+            .title = issue_title,
+            .body = issue_body,
+        },
+        .{},
+    );
+
+    defer allocator.free(path);
+    defer allocator.free(body);
+
+    return api(allocator, client, ctx, path, .{
+        .method = .POST,
+        .body = body,
+    });
+}
+
 // ===> TESTS START HERE
 
 test "parseFlags should handle valid CLI options and positionals properly" {
