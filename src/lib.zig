@@ -171,6 +171,9 @@ pub fn api(
         .extra_headers = extra_headers[0..count],
         .payload = options.body,
         .response_writer = &response_writer.writer,
+        // BUG: A 204 response without Content-Length hangs the function call
+        // until timeout occurrs. This is from the zig's stdlib side.
+        .keep_alive = false,
     });
 
     const status_code = @intFromEnum(req.status);
@@ -436,7 +439,26 @@ pub fn commentEdit(
     });
 }
 
-pub fn commentDelete() ![]const u8 {}
+/// Deletes a given Forgejo comment by ID. It returns the deleted comment
+/// status and the result is owned by the caller.
+pub fn commentDelete(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    comment_id: u32,
+) ![]const u8 {
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/issues/comments/{d}",
+        .{ repo, comment_id },
+    );
+
+    defer allocator.free(path);
+    return api(allocator, client, ctx, path, .{
+        .method = .DELETE,
+    });
+}
 
 /// Lists the comments of a given Forgejo issue. Returns a JSON value owned by
 /// the caller.

@@ -150,6 +150,25 @@ pub fn main(init: std.process.Init) !void {
             limit,
         );
         try stdout.print("{s}\n", .{query});
+    } else if (std.mem.eql(u8, action, "comment-delete")) {
+        const comment_id = try std.fmt.parseInt(
+            u32,
+            opts.positionals[2],
+            10,
+        );
+
+        _ = try lib.commentDelete(
+            arena,
+            &client,
+            ctx,
+            repo,
+            comment_id,
+        );
+
+        try stdout.print(
+            "Comment {d} deleted from repository {s}\n",
+            .{ comment_id, repo },
+        );
     } else {
         std.log.err("Error: unknown action '{s}'\n", .{action});
         return error.UnknownAction;
