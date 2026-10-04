@@ -169,6 +169,33 @@ pub fn main(init: std.process.Init) !void {
             "Comment {d} deleted from repository {s}\n",
             .{ comment_id, repo },
         );
+    } else if (std.mem.eql(u8, action, "label-list")) {
+        // TODO -> GET /repos/{repo}/labels?limit=100
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "milestone-list")) {
+        // TODO -> GET /repos/{repo}/milestones?state=all&limit=100
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "pr-view")) {
+        // TODO -> GET /repos/{repo}/pulls/{number}
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "issue-search")) {
+        // TODO -> GET /repos/{repo}/issues + query string
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "issue-create")) {
+        // TODO -> POST /repos/{repo}/issues, body {"title","body"}
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "pr-create")) {
+        // TODO -> POST /repos/{repo}/pulls, body {title,head,base,body}
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "issue-block")) {
+        // TODO -> POST /repos/{repo}/issues/{blocker}/blocks
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "issue-unblock")) {
+        // TODO -> DELETE /repos/{repo}/issues/{blocker}/blocks
+        try stdout.print("todo\n", .{});
+    } else if (std.mem.eql(u8, action, "issue-edit")) {
+        // TODO -> PATCH /repos/{repo}/issues/{number}
+        try stdout.print("todo\n", .{});
     } else {
         std.log.err("Error: unknown action '{s}'\n", .{action});
         return error.UnknownAction;
