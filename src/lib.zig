@@ -94,6 +94,21 @@ pub const Options = struct {
     /// Value flag for base of pr-create
     base: ?[]const u8 = null,
 
+    /// Value flag for blocked of issue-block
+    blocked: ?[]const u8 = null,
+
+    /// Value flag for state of issue-search
+    state: ?[]const u8 = null,
+
+    /// Comma-separated labels for issue-edit
+    labels: ?[]const u8 = null,
+
+    /// Comma-separated assignees for issue-edit
+    assignees: ?[]const u8 = null,
+
+    /// ID or title for issue-edit milestone
+    milestone: ?[]const u8 = null,
+
     /// Represents the positional arguments for the CLI. We do not need more
     /// than 16 in the entire program's lifecycle AFAIK.
     positionals: [16][]const u8 = undefined,
@@ -271,6 +286,30 @@ pub fn parseFlags(args: []const []const u8) !Options {
             if (i + 1 >= args.len) return error.MissingValue;
             i += 1;
             opts.base = args[i];
+        } else if (std.mem.eql(u8, arg, "--blocked")) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.blocked = args[i];
+        } else if (std.mem.eql(u8, arg, "--state") or std.mem.eql(
+            u8,
+            arg,
+            "-s",
+        )) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.state = args[i];
+        } else if (std.mem.eql(u8, arg, "--labels")) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.labels = args[i];
+        } else if (std.mem.eql(u8, arg, "--assignees")) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.assignees = args[i];
+        } else if (std.mem.eql(u8, arg, "--milestone")) {
+            if (i + 1 >= args.len) return error.MissingValue;
+            i += 1;
+            opts.milestone = args[i];
         } else {
             // Unrecognized flags or regular values are treated as positional
             // arguments
@@ -613,6 +652,182 @@ pub fn prList(
     return api(allocator, client, ctx, path, .{});
 }
 
+/// Blocks one or more issues from a given blocker issue. Sends one POST per
+/// blocked issue. Returns a JSON array of the responses, owned by the caller.
+pub fn issueBlock(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    blocker: u32,
+    blocked: []const u32,
+) ![]const u8 {
+    const slash = std.mem.findScalar(
+        u8,
+        repo,
+        '/',
+    ) orelse return error.InvalidRepo;
+    const owner = repo[0..slash];
+    const name = repo[slash + 1 ..];
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+
+    try out.append(allocator, '[');
+    for (blocked, 0..) |index, i| {
+        if (i != 0) try out.append(allocator, ',');
+
+        const path = try std.fmt.allocPrint(
+            allocator,
+            "/repos/{s}/issues/{d}/blocks",
+            .{ repo, blocker },
+        );
+        defer allocator.free(path);
+
+        const meta = try std.json.Stringify.valueAlloc(
+            allocator,
+            .{ .index = index, .owner = owner, .repo = name },
+            .{},
+        );
+        defer allocator.free(meta);
+
+        const response = try api(
+            allocator,
+            client,
+            ctx,
+            path,
+            .{
+                .method = .POST,
+                .body = meta,
+            },
+        );
+        defer allocator.free(response);
+
+        try out.appendSlice(allocator, response);
+    }
+    try out.append(allocator, ']');
+
+    return try out.toOwnedSlice(allocator);
+}
+
+/// Unblocks one or more issues from a given blocker issue. Returns a JSON
+/// array of the responses, owned by the caller.
+///
+/// HACK: the zig std fetch forbids a body on DELETE (assert in
+/// sendBodyUnflushed), but Forgejo's unblock endpoint requires a body.
+///
+/// This function bypasses fetch and speaks HTTP manually (Thanks, robots!):
+/// sendBodilessUnflushed sends the head (it has no body assert), the
+/// Content-Length goes as a regular extra header, and the body is written
+/// raw to the connection. The response is read by hand too.
+pub fn issueUnblock(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    blocker: u32,
+    blocked: []const u32,
+) ![]const u8 {
+    const slash = std.mem.findScalar(
+        u8,
+        repo,
+        '/',
+    ) orelse return error.InvalidRepo;
+    const owner = repo[0..slash];
+    const name = repo[slash + 1 ..];
+
+    const auth_val = try std.fmt.allocPrint(
+        allocator,
+        "token {s}",
+        .{ctx.token},
+    );
+    defer allocator.free(auth_val);
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+
+    try out.append(allocator, '[');
+    for (blocked, 0..) |index, i| {
+        if (i != 0) try out.append(allocator, ',');
+
+        const path = try std.fmt.allocPrint(
+            allocator,
+            "/repos/{s}/issues/{d}/blocks",
+            .{ repo, blocker },
+        );
+        defer allocator.free(path);
+
+        const url_str = try std.fmt.allocPrint(
+            allocator,
+            "{s}/api/v1{s}",
+            .{ ctx.base, path },
+        );
+        defer allocator.free(url_str);
+
+        const meta = try std.json.Stringify.valueAlloc(
+            allocator,
+            .{ .index = index, .owner = owner, .repo = name },
+            .{},
+        );
+        defer allocator.free(meta);
+
+        const content_length = try std.fmt.allocPrint(
+            allocator,
+            "{d}",
+            .{meta.len},
+        );
+        defer allocator.free(content_length);
+
+        // Holy fucking shit! said tool
+        var req = try client.request(
+            .DELETE,
+            try std.Uri.parse(url_str),
+            .{
+                .redirect_behavior = .unhandled,
+                .extra_headers = &.{
+                    .{ .name = "Authorization", .value = auth_val },
+                    .{ .name = "Content-Type", .value = "application/json" },
+                    .{ .name = "Content-Length", .value = content_length },
+                },
+                .keep_alive = false,
+            },
+        );
+        defer req.deinit();
+
+        try req.sendBodilessUnflushed();
+        try req.connection.?.writer().writeAll(meta);
+        try req.connection.?.flush();
+
+        var response = try req.receiveHead(&.{});
+        var response_writer = std.Io.Writer.Allocating.init(allocator);
+        defer response_writer.deinit();
+
+        const reader = response.reader(&.{});
+        _ = reader.streamRemaining(&response_writer.writer) catch |err| switch (err) {
+            error.ReadFailed => return response.bodyErr().?,
+            else => |e| return e,
+        };
+
+        const status_code = @intFromEnum(response.head.status);
+        const body = try response_writer.toOwnedSlice();
+        errdefer allocator.free(body);
+
+        if (status_code < 200 or status_code >= 300) {
+            std.debug.print("HTTP {d} for {s}: {s}\n", .{
+                status_code,
+                url_str,
+                body,
+            });
+            return error.HttpClientError;
+        }
+
+        try out.appendSlice(allocator, body);
+    }
+    try out.append(allocator, ']');
+
+    return try out.toOwnedSlice(allocator);
+}
+
 /// Creates an issue inside a given Forgejo repository. The returned JSON is the
 /// created issue and it's owned by the caller.
 pub fn issueCreate(
@@ -644,6 +859,233 @@ pub fn issueCreate(
     return api(allocator, client, ctx, path, .{
         .method = .POST,
         .body = body,
+    });
+}
+
+/// Percent-encodes a value for use inside a URL query string. Only the
+/// unreserved characters (A-Za-z0-9-_.~) survive raw, the rest becomes %XX.
+fn percentEncodeQueryValue(allocator: Allocator, value: []const u8) ![]const u8 {
+    var writer = std.Io.Writer.Allocating.init(allocator);
+    defer writer.deinit();
+    try std.Uri.Component.percentEncode(&writer.writer, value, isQueryChar);
+    return try writer.toOwnedSlice();
+}
+
+fn isQueryChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '-' or c == '_' or c == '.' or c == '~';
+}
+
+/// Builds the query string for issue-search. Empty/absent params are
+/// dropped, present ones are percent-encoded.
+/// Always includes type=issues. Returns a slice owned by the caller.
+pub fn encodeQuery(
+    allocator: Allocator,
+    q: ?[]const u8,
+    state: ?[]const u8,
+) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+
+    try out.append(allocator, '?');
+    try out.appendSlice(allocator, "type=issues");
+
+    if (q) |query| {
+        if (query.len > 0) {
+            try out.appendSlice(allocator, "&q=");
+            const enc = try percentEncodeQueryValue(allocator, query);
+            defer allocator.free(enc);
+            try out.appendSlice(allocator, enc);
+        }
+    }
+
+    if (state) |s| {
+        if (s.len > 0) {
+            try out.appendSlice(allocator, "&state=");
+            const enc = try percentEncodeQueryValue(allocator, s);
+            defer allocator.free(enc);
+            try out.appendSlice(allocator, enc);
+        }
+    }
+
+    return try out.toOwnedSlice(allocator);
+}
+
+/// Searches issues of a given Forgejo repository. Returns a JSON value owned
+/// by the caller.
+pub fn issueSearch(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    q: ?[]const u8,
+    state: ?[]const u8,
+) ![]const u8 {
+    const query = try encodeQuery(allocator, q, state);
+    defer allocator.free(query);
+
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/issues{s}",
+        .{ repo, query },
+    );
+    defer allocator.free(path);
+
+    return api(allocator, client, ctx, path, .{});
+}
+
+/// Options accepted by issueEdit. Labels and assignees are
+/// comma-separated strings; milestone is an ID or a title.
+pub const IssueEditOptions = struct {
+    body: ?[]const u8 = null,
+    labels: ?[]const u8 = null,
+    assignees: ?[]const u8 = null,
+    milestone: ?[]const u8 = null,
+    state: ?[]const u8 = null,
+};
+
+/// The shape of one label as returned by the labels endpoint. Extra JSON
+/// fields are ignored by the parser.
+const Label = struct {
+    id: u32,
+    name: []const u8,
+};
+
+/// The shape of one milestone as returned by the milestones endpoint.
+const Milestone = struct {
+    id: u32,
+    title: []const u8,
+};
+
+/// Edits an issue: resolves labels by name to IDs (PUT), and patches
+/// body/assignees/state/milestone (milestone by ID or by title).
+/// Returns the patched issue JSON, owned by the caller.
+pub fn issueEdit(
+    allocator: Allocator,
+    client: *std.http.Client,
+    ctx: Context,
+    repo: []const u8,
+    number: u32,
+    edit: IssueEditOptions,
+) ![]const u8 {
+    if (edit.labels) |labels| {
+        const labels_path = try std.fmt.allocPrint(
+            allocator,
+            "/repos/{s}/labels?limit=100",
+            .{repo},
+        );
+        defer allocator.free(labels_path);
+
+        const raw_labels = try api(allocator, client, ctx, labels_path, .{});
+        defer allocator.free(raw_labels);
+
+        var parsed = try std.json.parseFromSlice([]Label, allocator, raw_labels, .{});
+        defer parsed.deinit();
+
+        var ids: [16]u32 = undefined;
+        var count: usize = 0;
+        var it = std.mem.splitScalar(u8, labels, ',');
+        while (it.next()) |name| {
+            if (name.len == 0) continue;
+            var found = false;
+            for (parsed.value) |label| {
+                if (std.mem.eql(u8, label.name, name)) {
+                    ids[count] = label.id;
+                    count += 1;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                std.log.err("unknown label \"{s}\"\n", .{name});
+                return error.UnknownLabel;
+            }
+        }
+
+        const put_path = try std.fmt.allocPrint(
+            allocator,
+            "/repos/{s}/issues/{d}/labels",
+            .{ repo, number },
+        );
+        defer allocator.free(put_path);
+
+        const put_body = try std.json.Stringify.valueAlloc(
+            allocator,
+            .{ .labels = ids[0..count] },
+            .{},
+        );
+        defer allocator.free(put_body);
+
+        _ = try api(allocator, client, ctx, put_path, .{
+            .method = .PUT,
+            .body = put_body,
+        });
+    }
+
+    // The patch is built ONLY with the present fields. The
+    // emit_null_optional_fields=false option makes absent optionals not
+    // appear in the JSON (otherwise it would send "body":null and Forgejo
+    // would clear it).
+    var milestone_id: ?u32 = null;
+    if (edit.milestone) |milestone| {
+        if (std.fmt.parseInt(u32, milestone, 10)) |id| {
+            milestone_id = id;
+        } else |_| {
+            // Not numeric: look up by title.
+            const m_path = try std.fmt.allocPrint(
+                allocator,
+                "/repos/{s}/milestones?state=all&limit=100",
+                .{repo},
+            );
+            defer allocator.free(m_path);
+
+            const raw_milestones = try api(allocator, client, ctx, m_path, .{});
+            defer allocator.free(raw_milestones);
+
+            var parsed_m = try std.json.parseFromSlice([]Milestone, allocator, raw_milestones, .{});
+            defer parsed_m.deinit();
+
+            var found = false;
+            for (parsed_m.value) |m| {
+                if (std.mem.eql(u8, m.title, milestone)) {
+                    milestone_id = m.id;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                std.log.err("unknown milestone \"{s}\"\n", .{milestone});
+                return error.UnknownMilestone;
+            }
+        }
+    }
+
+    const patch = try std.json.Stringify.valueAlloc(
+        allocator,
+        .{
+            .body = edit.body,
+            .assignees = edit.assignees,
+            .state = edit.state,
+            .milestone = milestone_id,
+        },
+        .{ .emit_null_optional_fields = false },
+    );
+    defer allocator.free(patch);
+
+    const issue_path = try std.fmt.allocPrint(
+        allocator,
+        "/repos/{s}/issues/{d}",
+        .{ repo, number },
+    );
+    defer allocator.free(issue_path);
+
+    // If there is nothing to patch, return the issue as-is.
+    if (patch.len == 2) {
+        return api(allocator, client, ctx, issue_path, .{});
+    }
+
+    return api(allocator, client, ctx, issue_path, .{
+        .method = .PATCH,
+        .body = patch,
     });
 }
 
@@ -811,6 +1253,37 @@ test "defaultConfigPath should return the default forgejo-cli configuration" {
     try std.testing.expectEqualStrings(
         "/home/zig/.local/share/forgejo-cli/keys.json",
         config_path,
+    );
+}
+
+test "readKeys should fail on malformed JSON" {
+    const allocator: Allocator = std.testing.allocator;
+    const io: Io = std.testing.io;
+
+    var tmp: std.testing.TmpDir = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // A value where a map entry is expected is not valid JSON.
+    const payload =
+        \\{"hosts": }
+    ;
+
+    try tmp.dir.writeFile(
+        std.testing.io,
+        .{ .sub_path = "bad_keys.json", .data = payload },
+    );
+
+    var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path_len = try tmp.dir.realPathFile(
+        std.testing.io,
+        "bad_keys.json",
+        &path_buffer,
+    );
+    const abs_path = path_buffer[0..abs_path_len];
+
+    try std.testing.expectError(
+        error.SyntaxError,
+        readKeys(io, allocator, abs_path),
     );
 }
 
