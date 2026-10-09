@@ -32,7 +32,7 @@
 
 (define (build-test)
   "Test if the project compiles"
-  ($ '("zig" "build" "run")
+  ($ '("zig" "build" "run" "--" "help")
      #:verbose? #t))
 
 (define (clean)
