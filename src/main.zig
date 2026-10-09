@@ -394,6 +394,10 @@ pub fn main(init: std.process.Init) !void {
         var it = std.mem.splitScalar(u8, list, ',');
         while (it.next()) |piece| {
             if (piece.len == 0) continue;
+            if (count >= blocked.len) {
+                std.log.err("Error: too many blocked issues (max {d})\n", .{blocked.len});
+                return error.TooManyBlockedIssues;
+            }
             blocked[count] = try std.fmt.parseInt(u32, piece, 10);
             count += 1;
         }
@@ -427,6 +431,10 @@ pub fn main(init: std.process.Init) !void {
         var it = std.mem.splitScalar(u8, list, ',');
         while (it.next()) |piece| {
             if (piece.len == 0) continue;
+            if (count >= blocked.len) {
+                std.log.err("Error: too many blocked issues (max {d})\n", .{blocked.len});
+                return error.TooManyBlockedIssues;
+            }
             blocked[count] = try std.fmt.parseInt(u32, piece, 10);
             count += 1;
         }
