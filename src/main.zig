@@ -269,6 +269,11 @@ pub fn main(init: std.process.Init) !void {
 
         try stdout.print("{s}\n", .{query});
     } else if (std.mem.eql(u8, action, "pr-view")) {
+        if (opts.positional_count < 3) {
+            std.log.err("Error: missing pull request number for {s}\n", .{action});
+            return error.UsageError;
+        }
+
         const number = try std.fmt.parseInt(
             u32,
             opts.positionals[2],
