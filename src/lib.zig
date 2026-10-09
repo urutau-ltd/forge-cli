@@ -331,7 +331,8 @@ pub fn parseFlags(args: []const []const u8) !Options {
 ///
 /// Also, mind that this function reads files no bigger than 10MB.
 /// It returns either error.FileNotFound, json.SyntaxError, etc if the keys file
-/// doesn't exist or if it contains a malformed JSON.
+/// doesn't exist or if it contains a malformed JSON, and error.InvalidKeysFile
+/// if the JSON is valid but doesn't have the expected keys file shape.
 pub fn readKeys(io: Io, allocator: Allocator, path: []const u8) !KeysFile {
     const file = Io.Dir.cwd().openFile(io, path, .{}) catch |err| {
         std.debug.print("unable to read forgejo-cli keys at {s}: {s}\n", //
@@ -357,46 +358,76 @@ pub fn readKeys(io: Io, allocator: Allocator, path: []const u8) !KeysFile {
     defer parsed.deinit();
 
     // Map the parsed value into a struct
-    const root = parsed.value.object;
+    const root = switch (parsed.value) {
+        .object => |root| root,
+        else => return error.InvalidKeysFile,
+    };
+
     var keys_file: KeysFile = KeysFile.init(allocator);
     errdefer keys_file.deinit(allocator);
 
     if (root.get("hosts")) |hosts_val| {
-        var it = hosts_val.object.iterator();
+        const hosts = switch (hosts_val) {
+            .object => |hosts| hosts,
+            else => return error.InvalidKeysFile,
+        };
+
+        var it = hosts.iterator();
         while (it.next()) |kv| {
-            const host_obj = kv.value_ptr.*.object;
-
-            const entry = KeyEntry{
-                .type = try allocator.dupe(
-                    u8,
-                    host_obj.get("type").?.string,
-                ),
-
-                .name = try allocator.dupe(
-                    u8,
-                    host_obj.get("name").?.string,
-                ),
-
-                .token = try allocator.dupe(
-                    u8,
-                    host_obj.get("token").?.string,
-                ),
+            const host_obj = switch (kv.value_ptr.*) {
+                .object => |host_obj| host_obj,
+                else => return error.InvalidKeysFile,
             };
 
-            try keys_file.hosts.put(
-                try allocator.dupe(u8, kv.key_ptr.*),
-                entry,
-            );
+            const entry_type = switch (host_obj.get("type") orelse return error.InvalidKeysFile) {
+                .string => |value| value,
+                else => return error.InvalidKeysFile,
+            };
+            const entry_name = switch (host_obj.get("name") orelse return error.InvalidKeysFile) {
+                .string => |value| value,
+                else => return error.InvalidKeysFile,
+            };
+            const entry_token = switch (host_obj.get("token") orelse return error.InvalidKeysFile) {
+                .string => |value| value,
+                else => return error.InvalidKeysFile,
+            };
+
+            const type_copy = try allocator.dupe(u8, entry_type);
+            errdefer allocator.free(type_copy);
+            const name_copy = try allocator.dupe(u8, entry_name);
+            errdefer allocator.free(name_copy);
+            const token_copy = try allocator.dupe(u8, entry_token);
+            errdefer allocator.free(token_copy);
+            const host_copy = try allocator.dupe(u8, kv.key_ptr.*);
+            errdefer allocator.free(host_copy);
+
+            try keys_file.hosts.put(host_copy, .{
+                .type = type_copy,
+                .name = name_copy,
+                .token = token_copy,
+            });
         }
     }
 
     if (root.get("aliases")) |aliases_val| {
-        var it = aliases_val.object.iterator();
+        const aliases = switch (aliases_val) {
+            .object => |aliases| aliases,
+            else => return error.InvalidKeysFile,
+        };
+
+        var it = aliases.iterator();
         while (it.next()) |kv| {
-            try keys_file.aliases.put(
-                try allocator.dupe(u8, kv.key_ptr.*),
-                try allocator.dupe(u8, kv.value_ptr.*.string),
-            );
+            const alias = switch (kv.value_ptr.*) {
+                .string => |alias| alias,
+                else => return error.InvalidKeysFile,
+            };
+
+            const alias_copy = try allocator.dupe(u8, kv.key_ptr.*);
+            errdefer allocator.free(alias_copy);
+            const host_copy = try allocator.dupe(u8, alias);
+            errdefer allocator.free(host_copy);
+
+            try keys_file.aliases.put(alias_copy, host_copy);
         }
     }
 
@@ -1334,4 +1365,54 @@ test "readKeys should load keys from a valid JSON file" {
 
     const alias_val = keys_file.aliases.get("sl").?;
     try std.testing.expectEqualStrings("sl.urutau-ltd.org", alias_val);
+}
+
+test "readKeys should fail with InvalidKeysFile on badly shaped keys files" {
+    const allocator: Allocator = std.testing.allocator;
+    const io: Io = std.testing.io;
+
+    const payloads = [_][]const u8{
+        // The root is not a JSON object.
+        \\[]
+        ,
+        // hosts must be an object.
+        \\{"hosts": []}
+        ,
+        // A host entry missing its type/name/token fields.
+        \\{"hosts": {"sl.urutau-ltd.org": {"name": "testingkey"}}}
+        ,
+        // A host entry with a non-string token.
+        \\{"hosts": {"sl.urutau-ltd.org": {"type": "Application", "name": "testingkey", "token": 1}}}
+        ,
+        // A valid host followed by a broken one: the valid entry must be
+        // freed when the function fails midway.
+        \\{"hosts": {"a.org": {"type": "Application", "name": "a", "token": "a"}, "b.org": {}}}
+        ,
+        // Aliases must map to strings.
+        \\{"aliases": {"sl": 42}}
+        ,
+    };
+
+    var tmp: std.testing.TmpDir = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    for (payloads, 0..) |payload, index| {
+        var name_buffer: [16]u8 = undefined;
+        const name = try std.fmt.bufPrint(
+            &name_buffer,
+            "bad_{d}.json",
+            .{index},
+        );
+
+        try tmp.dir.writeFile(io, .{ .sub_path = name, .data = payload });
+
+        var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const abs_path_len = try tmp.dir.realPathFile(io, name, &path_buffer);
+        const abs_path = path_buffer[0..abs_path_len];
+
+        try std.testing.expectError(
+            error.InvalidKeysFile,
+            readKeys(io, allocator, abs_path),
+        );
+    }
 }
