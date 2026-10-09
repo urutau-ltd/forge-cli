@@ -413,6 +413,11 @@ pub fn main(init: std.process.Init) !void {
         );
         try stdout.print("{s}\n", .{query});
     } else if (std.mem.eql(u8, action, "issue-unblock")) {
+        if (opts.positional_count < 3) {
+            std.log.err("Error: missing blocker issue number for {s}\n", .{action});
+            return error.UsageError;
+        }
+
         const blocker = try std.fmt.parseInt(u32, opts.positionals[2], 10);
 
         const list = opts.blocked orelse "";
