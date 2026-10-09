@@ -989,6 +989,10 @@ pub fn issueEdit(
             var found = false;
             for (parsed.value) |label| {
                 if (std.mem.eql(u8, label.name, name)) {
+                    if (count >= ids.len) {
+                        std.log.err("too many labels (max {d})\n", .{ids.len});
+                        return error.TooManyLabels;
+                    }
                     ids[count] = label.id;
                     count += 1;
                     found = true;
