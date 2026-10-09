@@ -466,7 +466,7 @@ pub fn resolveContext(
 
     const entry = keys.hosts.get(host) orelse {
         std.debug.print(
-            "no token found for host {s} in {s}",
+            "no token found for host {s} in {s}\n",
             .{
                 host,
                 config_path,
