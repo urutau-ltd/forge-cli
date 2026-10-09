@@ -334,6 +334,11 @@ pub fn main(init: std.process.Init) !void {
             .{query},
         );
     } else if (std.mem.eql(u8, action, "pr-create")) {
+        if (opts.positional_count < 3) {
+            std.log.err("Error: missing pull request title for {s}\n", .{action});
+            return error.UsageError;
+        }
+
         const title = opts.positionals[2];
         const head = opts.head orelse "";
         const base = opts.base orelse "";
