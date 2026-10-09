@@ -304,6 +304,11 @@ pub fn main(init: std.process.Init) !void {
         );
         try stdout.print("{s}\n", .{query});
     } else if (std.mem.eql(u8, action, "issue-create")) {
+        if (opts.positional_count < 3) {
+            std.log.err("Error: missing issue title for {s}\n", .{action});
+            return error.UsageError;
+        }
+
         const issue_title = opts.positionals[2];
         const body = opts.body orelse "";
 
