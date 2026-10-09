@@ -1416,3 +1416,53 @@ test "readKeys should fail with InvalidKeysFile on badly shaped keys files" {
         );
     }
 }
+
+test "parseFlags should accept the short flag aliases" {
+    const args = [_][]const u8{
+        "-c",
+        "cfg.json",
+        "-h",
+        "example.org",
+        "-b",
+        "hello",
+        "-s",
+        "open",
+        "comment-create",
+        "org/repo",
+        "4",
+    };
+    const opts = try parseFlags(&args);
+
+    try std.testing.expectEqualStrings("cfg.json", opts.config.?);
+    try std.testing.expectEqualStrings("example.org", opts.host.?);
+    try std.testing.expectEqualStrings("hello", opts.body.?);
+    try std.testing.expectEqualStrings("open", opts.state.?);
+
+    try std.testing.expectEqual(@as(usize, 3), opts.positional_count);
+    try std.testing.expectEqualStrings("comment-create", opts.positionals[0]);
+    try std.testing.expectEqualStrings("org/repo", opts.positionals[1]);
+    try std.testing.expectEqualStrings("4", opts.positionals[2]);
+}
+
+test "encodeQuery should always include type=issues and drop empty params" {
+    const allocator: Allocator = std.testing.allocator;
+
+    const no_params = try encodeQuery(allocator, null, null);
+    defer allocator.free(no_params);
+    try std.testing.expectEqualStrings("?type=issues", no_params);
+
+    const empty_params = try encodeQuery(allocator, "", "");
+    defer allocator.free(empty_params);
+    try std.testing.expectEqualStrings("?type=issues", empty_params);
+}
+
+test "encodeQuery should percent-encode the q and state values" {
+    const allocator: Allocator = std.testing.allocator;
+
+    const query = try encodeQuery(allocator, "hello world&x", "open");
+    defer allocator.free(query);
+    try std.testing.expectEqualStrings(
+        "?type=issues&q=hello%20world%26x&state=open",
+        query,
+    );
+}
