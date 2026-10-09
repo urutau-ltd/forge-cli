@@ -134,6 +134,11 @@ pub fn main(init: std.process.Init) !void {
             .{query},
         );
     } else if (std.mem.eql(u8, action, "comment-edit")) {
+        if (opts.positional_count < 3) {
+            std.log.err("Error: missing comment id for {s}\n", .{action});
+            return error.UsageError;
+        }
+
         const comment_id = try std.fmt.parseInt(
             u32,
             opts.positionals[2],
