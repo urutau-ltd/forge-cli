@@ -30,7 +30,7 @@
 (define-public forge-cli
   (package
     (name "forge-cli")
-    (version "0.1.0")
+    (version "0.1.1")
     (source
      (local-file (dirname (current-filename))
                  #:recursive? #t
