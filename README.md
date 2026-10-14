@@ -47,6 +47,7 @@ actions:
 options:
   --config PATH   forgejo-cli keys file (default ~/.local/share/forgejo-cli/keys.json)
   --host HOST     host key in the keys file
+  --version, -v   print the version and exit
 ```
 
 ## Configuration

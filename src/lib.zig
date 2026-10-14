@@ -77,6 +77,10 @@ pub const Context = struct {
 
 /// Represents a parsed collection of CLI arguments for post-processing
 pub const Options = struct {
+    /// Set when --version/-v is passed, main prints the version and exits
+    /// before reading any configuration.
+    version: bool = false,
+
     /// Optional field for the path of the configuration file in case it's not
     /// present in the default intended path.
     config: ?[]const u8 = null,
@@ -254,7 +258,9 @@ pub fn parseFlags(args: []const []const u8) !Options {
     while (i < args.len) : (i += 1) {
         const arg: []const u8 = args[i];
 
-        if (std.mem.eql(
+        if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
+            opts.version = true;
+        } else if (std.mem.eql(
             u8,
             arg,
             "--config",
@@ -1181,6 +1187,17 @@ test "parseFlags should handle valid CLI options and positionals properly" {
     // Assert positional args
     try std.testing.expectEqual(@as(usize, 1), opts.positional_count);
     try std.testing.expectEqualStrings("repo-view", opts.positionals[0]);
+}
+
+test "parseFlags should flag --version and -v" {
+    const long = try parseFlags(&[_][]const u8{"--version"});
+    try std.testing.expect(long.version);
+
+    const short = try parseFlags(&[_][]const u8{"-v"});
+    try std.testing.expect(short.version);
+
+    const plain = try parseFlags(&[_][]const u8{"repo-view"});
+    try std.testing.expect(!plain.version);
 }
 
 test "parseFlags should error out when a flag has no provided value" {

@@ -1,8 +1,12 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "version", zon.version);
 
     const lib_module = b.createModule(.{
         .root_source_file = b.path("src/lib.zig"),
@@ -23,6 +27,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("lib", lib_module);
+    exe.root_module.addOptions("build_options", build_options);
 
     b.installArtifact(exe);
 

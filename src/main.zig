@@ -5,6 +5,7 @@ const StringHashMap = std.StringHashMap;
 const Allocator = std.mem.Allocator;
 
 const lib = @import("lib");
+const build_options = @import("build_options");
 
 const DEFAULT_HOST = "sl.urutau-ltd.org:23231";
 const DEFAULT_BASE = "https://sl.urutau-ltd.org";
@@ -31,6 +32,7 @@ const USAGE =
     \\options:
     \\  --config PATH   forgejo-cli keys file (default ~/.local/share/forgejo-cli/keys.json)
     \\  --host HOST     host key in the keys file
+    \\  --version, -v   print the version and exit
 ;
 
 pub fn main(init: std.process.Init) !void {
@@ -44,6 +46,13 @@ pub fn main(init: std.process.Init) !void {
 
     const args = (try minimal.args.toSlice(arena))[1..];
     const opts = try lib.parseFlags(args);
+
+    // --version works without a repository argument or a keys file.
+    if (opts.version) {
+        try stdout.print("forge-cli {s}\n", .{build_options.version});
+        try stdout.flush();
+        return;
+    }
 
     // help is the only action that works without a repository argument.
     // --help falls into the positionals because parseFlags does not know it.
