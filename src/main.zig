@@ -222,13 +222,14 @@ pub fn main(init: std.process.Init) !void {
             10,
         );
 
-        _ = try lib.commentDelete(
+        const deleted = try lib.commentDelete(
             arena,
             &client,
             ctx,
             repo,
             comment_id,
         );
+        arena.free(deleted);
 
         try stdout.print(
             "Comment {d} deleted from repository {s}\n",
