@@ -1056,10 +1056,11 @@ pub fn issueEdit(
         );
         defer allocator.free(put_body);
 
-        _ = try api(allocator, client, ctx, put_path, .{
+        const put_response = try api(allocator, client, ctx, put_path, .{
             .method = .PUT,
             .body = put_body,
         });
+        allocator.free(put_response);
     }
 
     // The patch is built ONLY with the present fields. The
